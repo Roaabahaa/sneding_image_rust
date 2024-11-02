@@ -1,60 +1,53 @@
-// client.rs
-use std::fs::File;
-use std::io::{self, Read};
 use std::net::UdpSocket;
+use std::fs::File;
+use std::io::{Read, Write};
 use std::time::Duration;
 
-const CHUNK_SIZE: usize = 512; // 512 bytes per chunk
-const END_TRANSMISSION: &[u8] = b"END"; // Marker to signal end of transmission
+const SERVER_ADDR: &str = "192.168.1.10:8080"; // Use server's IP address
+const CHUNK_SIZE: usize = 1024; // Adjust based on requirements
+const END_TRANSMISSION: &[u8] = b"END";
 
-fn main() -> io::Result<()> {
-    const SERVER_ADDR: &str = "192.168.1.10:8080"; // Use server's IP address
-    let socket = UdpSocket::bind("0.0.0.0:0")?;
-    socket.connect(server_addr)?;
+fn main() -> std::io::Result<()> {
+    let socket = UdpSocket::bind("0.0.0.0:0")?; // Bind to any available port on client
+    socket.connect(SERVER_ADDR)?; // Corrected this line to use `SERVER_ADDR`
 
-    println!("Connected to server");
+    // Read image file into buffer
+    let mut file = File::open("path/to/image.jpg")?;
+    let mut buffer = Vec::new();
+    file.read_to_end(&mut buffer)?;
+    println!("Read image from file: {} bytes", buffer.len());
 
-    let mut file = File::open("default.jpg")?;
-    let mut buffer = [0; CHUNK_SIZE];
-    let mut chunk_number = 0;
-
-    loop {
-        let bytes_read = file.read(&mut buffer)?;
-        if bytes_read == 0 {
-            break;
-        }
-
-        // Prepare the packet with a 2-byte chunk number header
-        let mut packet = Vec::new();
-        packet.extend_from_slice(&(chunk_number as u16).to_be_bytes());
-        packet.extend_from_slice(&buffer[..bytes_read]);
-
+    // Send image in chunks
+    for (i, chunk) in buffer.chunks(CHUNK_SIZE).enumerate() {
+        let mut packet = vec![];
+        packet.extend_from_slice(&(i as u16).to_be_bytes());
+        packet.extend_from_slice(chunk);
         socket.send(&packet)?;
-        println!("Sent chunk number: {}", chunk_number);
-        chunk_number += 1;
     }
 
-    // Signal the end of transmission
+    // Send end of transmission
     socket.send(END_TRANSMISSION)?;
+    println!("Image sent, waiting for response...");
 
-    // Wait to receive the reassembled image back from the server
+    // Receive the image back in chunks
     let mut received_data = Vec::new();
-    socket.set_read_timeout(Some(Duration::from_secs(5)))?;
+    let mut recv_buffer = [0; CHUNK_SIZE + 2];
+
     loop {
-        let mut recv_buffer = [0; CHUNK_SIZE + 2]; // +2 for chunk header
         match socket.recv(&mut recv_buffer) {
             Ok(len) if &recv_buffer[..3] == END_TRANSMISSION => break,
-            Ok(len) => received_data.extend_from_slice(&recv_buffer[2..len]), // skip the chunk header
+            Ok(len) => received_data.extend_from_slice(&recv_buffer[2..len]),
             Err(e) => {
-                eprintln!("Failed to receive: {:?}", e);
+                eprintln!("Failed to receive data: {:?}", e);
                 break;
             }
         }
     }
 
-    // Save the received file
-    std::fs::write("received_image_from_server.jpg", &received_data)?;
-    println!("Saved image as received_image_from_server.jpg");
+    // Save the received image
+    let mut received_file = File::create("received_from_server.jpg")?;
+    received_file.write_all(&received_data)?;
+    println!("Image received and saved as received_from_server.jpg");
 
     Ok(())
 }
