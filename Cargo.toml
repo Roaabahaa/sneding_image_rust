@@ -1,0 +1,18 @@
+[package]
+name = "test_image"
+version = "0.1.0"
+edition = "2021"
+
+# Add dependencies
+[dependencies]
+tokio = { version = "1", features = ["full"] }
+image = "0.24.4" # Adjust to a compatible version if needed
+
+# Define both binaries: server and client
+[[bin]]
+name = "server"
+path = "src/server.rs"
+
+[[bin]]
+name = "client"
+path = "src/client.rs"
